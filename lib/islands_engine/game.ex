@@ -191,6 +191,7 @@ defmodule IslandsEngine.Game do
       Guesses.add(guesses, hit_or_miss, coordinate)
     ​end​)
   end​
+  def via_tuple(name), ​do​: {​:via​, Registry, {Registry.Game, name}}
 
 
   defp add_player_reply(:ok, state, name) do
