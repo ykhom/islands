@@ -1,124 +1,53 @@
 defmodule IslandsEngine.Rules do
-  @behaviour :gen_statem
+  alias __MODULE__
 
-  defstruct player1: :islands_not_set, player2: :islands_not_set
+  defstruct state: :initialized,
+            player1: :islands_not_set,
+            player2: :islands_not_set
 
-  alias IslandsEngine.Rules
+  def new(), do: %Rules{}
 
-  #API functions
-  def start_link do
-    :gen_statem.start_link(__MODULE__, :initialized, [])
-  end
+  def check(%Rules{state: :initialized} = rules, :add_player),
+    do: {:ok, %Rules{rules | state: :players_set}}
 
-  def show_current_state(fsm) do
-    :gen_statem.call(fsm, :show_current_state)
-  end
-
-  def add_player(fsm) do
-    :gen_statem.call(fsm, :add_player)
-  end
-
-  def move_island(fsm, player) when is_atom player do
-    :gen_statem.call(fsm, {:move_island, player})
-  end
-
-  def set_islands(fsm, player) when is_atom player do
-    :gen_statem.call(fsm, {:set_islands, player})
-  end
-
-  def guess_coordinate(fsm, player) when is_atom player do
-    :gen_statem.call(fsm, {:guess_coordinate, player})
-  end
-
-  def win(fsm) do
-    :gen_statem.call(fsm, :win)
-  end
-
-
-  #Callback functions
-
-  def init(_) do
-    {:ok, :initialized, %Rules{}}
-  end
-
-  def callback_mode(),
-    do: :state_functions
-
-  def code_change(_vsn, state_name, state_data, _extra) do
-    {:ok, state_name, state_data}
-  end
-
-  def terminate(_reason, _state, _data),
-    do: :nothing
-
-  def initialized({:call, from}, :add_player, state_data) do
-    {:next_state, :players_set, state_data, {:reply, from, :ok}}
-  end
-  def initialized({:call, from}, :show_current_state, _state_data) do
-    {:keep_state_and_data, {:reply, from, :initialized}}
-  end
-  def initialized({:call, from}, _, _state_data) do
-    {:keep_state_and_data, {:reply, from, :error}}
-  end
-
-  def players_set({:call, from}, {:move_island, player}, state_data) do
-    case Map.get(state_data, player) do
-      :islands_not_set ->
-        {:keep_state_and_data, {:reply, from, :ok}}
-      :islands_set ->
-        {:keep_state_and_data, {:reply, from, :error}}
+  def check(%Rules{state: :players_set} = rules, {:position_islands, player}) do
+    case Map.fetch!(rules, player) do
+      :islands_set -> :error
+      :islands_not_set -> {:ok, rules}
     end
   end
-  def players_set({:call, from}, {:set_islands, player}, state_data) do
-    state_data = Map.put(state_data, player, :islands_set)
-    set_islands_reply(from, state_data, state_data.player1, state_data.player2)
-  end
-  def players_set({:call, from}, :show_current_state, _state_data) do
-    {:keep_state_and_data, {:reply, from, :players_set}}
-  end
-  def players_set({:call, from}, _, _state_data) do
-    {:keep_state_and_data, {:reply, from, :error}}
+
+  def check(%Rules{state: :players_set} = rules, {:set_islands, player}) do
+    rules = Map.put(rules, player, :islands_set)
+
+    case both_players_islands_set?(rules) do
+      true -> {:ok, %Rules{rules | state: :player1_turn}}
+      false -> {:ok, rules}
+    end
   end
 
-  def player1_turn({:call, from}, {:guess_coordinate, :player1}, state_data) do
-    {:next_state, :player2_turn, state_data, {:reply, from, :ok}}
-  end
-  def player1_turn({:call, from}, :win, state_data) do
-    {:next_state, :game_over, state_data, {:reply, from, :ok}}
-  end
-  def player1_turn({:call, from}, :show_current_state, _state_data) do
-    {:keep_state_and_data, {:reply, from, :player1_turn}}
-  end
-  def player1_turn({:call, from}, _, _state_data) do
-    {:keep_state_and_data, {:reply, from, :error}}
+  def check(%Rules{state: :player1_turn} = rules, {:guess_coordinate, :player1}),
+    do: {:ok, %Rules{rules | state: :player2_turn}}
+
+  def check(%Rules{state: :player1_turn} = rules, {:win_check, win_or_not}) do
+    case win_or_not do
+      :no_win -> {:ok, rules}
+      :win -> {:ok, %Rules{rules | state: :game_over}}
+    end
   end
 
-  def player2_turn({:call, from}, {:guess_coordinate, :player2}, state_data) do
-    {:next_state, :player1_turn, state_data, {:reply, from, :ok}}
-  end
-  def player2_turn({:call, from}, :win, state_data) do
-    {:next_state, :game_over, state_data, {:reply, from, :ok}}
-  end
-  def player2_turn({:call,from}, :show_current_state, _state_data) do
-    {:keep_state_and_data, {:reply, from, :player2_turn}}
-  end
-  def player2_turn(_event, _caller_pid, state) do
-    {:reply, {:error, :action_out_of_sequence}, :player2_turn, state}
-  end
-  def game_over({:call, from}, :show_current_state, _state_data) do
-    {:keep_state_and_data, {:reply, from, :game_over}}
-  end
-  def game_over({:call, from}, _, _state_data) do
-    {:keep_state_and_data, {:reply, from, :error}}
+  def check(%Rules{state: :player2_turn} = rules, {:guess_coordinate, :player2}),
+    do: {:ok, %Rules{rules | state: :player1_turn}}
+
+  def check(%Rules{state: :player2_turn} = rules, {:win_check, win_or_not}) do
+    case win_or_not do
+      :no_win -> {:ok, rules}
+      :win -> {:ok, %Rules{rules | state: :game_over}}
+    end
   end
 
-  defp set_islands_reply(from, state_data, status, status)
-  when status == :islands_set do
-    {:next_state, :player1_turn, state_data, {:reply, from, :ok}}
-  end
-  defp set_islands_reply(from, state_data, _, _) do
-    {:keep_state, state_data, {:reply, from, :ok}}
-  end
+  def check(_state, _action), do: :error
 
-
+  defp both_players_islands_set?(rules),
+    do: rules.player1 == :islands_set && rules.player2 == :islands_set
 end

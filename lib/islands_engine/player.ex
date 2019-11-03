@@ -1,11 +1,11 @@
 defmodule IslandsEngine.Player do
-  alias IslandsEngine.{IslandSet, Coordinate, Board, Player}
+  alias IslandsEngine.{IslandSet, Board, Player}
 
   defstruct name: :none, board: :none, island_set: :none
 
   def start_link(name \\ :none) do
-    {:ok, board} = Board.start_link
-    {:ok, island_set} = IslandSet.start_link
+    {:ok, board} = Board.start_link()
+    {:ok, island_set} = IslandSet.start_link()
     Agent.start_link(fn -> %Player{board: board, island_set: island_set, name: name} end)
   end
 
@@ -16,21 +16,28 @@ defmodule IslandsEngine.Player do
   def to_string(player) do
     "%Player{" <> string_body(player) <> "}"
   end
+
   defp string_body(player) do
-    state = Agent.get(player, &(&1))
-    ":name => " <> name_to_string(state.name) <> ",\n" <>
-    ":island_set => " <> IslandSet.to_string(state.island_set) <> ",\n" <>
-    ":board => " <> Board.to_string(state.board)
+    state = Agent.get(player, & &1)
+
+    ":name => " <>
+      name_to_string(state.name) <>
+      ",\n" <>
+      ":island_set => " <>
+      IslandSet.to_string(state.island_set) <>
+      ",\n" <>
+      ":board => " <> Board.to_string(state.board)
   end
+
   defp name_to_string(:none), do: ":none"
   defp name_to_string(name), do: ~s("#{name}")
 
-  #return a player’s board agent
+  # return a player’s board agent
   def get_board(player) do
     Agent.get(player, fn state -> state.board end)
   end
 
-  #return a player’s island_set agent
+  # return a player’s island_set agent
   def get_island_set(player) do
     Agent.get(player, fn state -> state.island_set end)
   end
@@ -45,15 +52,18 @@ defmodule IslandsEngine.Player do
   defp convert_coordinates(board, coordinates) do
     Enum.map(coordinates, fn coord -> convert_coordinate(board, coord) end)
   end
-  defp convert_coordinate(board, coordinate) when is_atom coordinate do
+
+  defp convert_coordinate(board, coordinate) when is_atom(coordinate) do
     Board.get_coordinate(board, coordinate)
   end
-  defp convert_coordinate(_board, coordinate) when is_pid coordinate do
+
+  defp convert_coordinate(_board, coordinate) when is_pid(coordinate) do
     coordinate
   end
 
   def guess_coordinate(opponent_board, coordinate) do
     Board.guess_coordinate(opponent_board, coordinate)
+
     case Board.coordinate_hit?(opponent_board, coordinate) do
       true -> :hit
       false -> :miss
